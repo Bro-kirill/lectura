@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Reading App</title>
+
+<style>
+  body {
+    margin: 0;
+    background: #0f0f14;
+    color: #eaeaf0;
+    font-family: system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 10px;
+    background: #181826;
+    box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  }
+
+  button {
+    background: #2a2a44;
+    color: white;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+  }
+
+  button:hover {
+    background: #3b3b66;
+  }
+
+  #pageInfo {
+    font-size: 14px;
+    opacity: 0.9;
+  }
+
+  main {
+    display: flex;
+    justify-content: center;
+    align-items: start;
+    height: calc(100vh - 56px);
+    overflow: auto;
+    padding: 20px;
+  }
+
+  canvas {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.6);
+    max-width: 100%;
+  }
+</style>
+</head>
+
+<body>
+
+<header>
+  <button id="prev">◀</button>
+  <span id="pageInfo">Loading…</span>
+  <button id="next">▶</button>
+</header>
+
+<main>
+  <canvas id="pdfCanvas"></canvas>
+</main>
+
+<!-- PDF.js CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<script>
+  const url = 'book.pdf'; // your preloaded book
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  let pdfDoc = null;
+  let pageNum = Number(localStorage.getItem('page')) || 1;
+  let scale = 1.5;
+
+  const canvas = document.getElementById('pdfCanvas');
+  const ctx = canvas.getContext('2d');
+  const pageInfo = document.getElementById('pageInfo');
+
+  function renderPage(num) {
+    pdfDoc.getPage(num).then(page => {
+      const viewport = page.getViewport({ scale });
+
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      page.render({
+        canvasContext: ctx,
+        viewport: viewport
+      });
+
+      pageInfo.textContent = `Page ${pageNum} / ${pdfDoc.numPages}`;
+      localStorage.setItem('page', pageNum);
+    });
+  }
+
+  pdfjsLib.getDocument(url).promise.then(pdf => {
+    pdfDoc = pdf;
+    renderPage(pageNum);
+  });
+
+  document.getElementById('next').onclick = () => {
+    if (pageNum < pdfDoc.numPages) {
+      pageNum++;
+      renderPage(pageNum);
+    }
+  };
+
+  document.getElementById('prev').onclick = () => {
+    if (pageNum > 1) {
+      pageNum--;
+      renderPage(pageNum);
+    }
+  };
+
+  // Keyboard navigation
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight') document.getElementById('next').click();
+    if (e.key === 'ArrowLeft') document.getElementById('prev').click();
+  });
+</script>
+
+</body>
+</html>
