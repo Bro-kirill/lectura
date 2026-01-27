@@ -2,113 +2,141 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>PDF Reading App with Highlights</title>
+<title>Ultimate PDF Reader</title>
+
 <style>
-  body { margin:0; background:#0f0f14; font-family:system-ui; color:white; overflow:hidden; }
-  header { display:flex; justify-content:center; gap:16px; padding:10px; background:#181826; }
-  button { background:#2a2a44; color:white; border:none; padding:8px 14px; border-radius:8px; cursor:pointer; }
-  button:hover { background:#3b3b66; }
-  #main { display:flex; justify-content:center; align-items:flex-start; height:calc(100vh-56px); overflow:auto; padding:20px; }
-  #viewer { position:relative; }
-  canvas { display:block; border-radius:10px; box-shadow:0 10px 40px rgba(0,0,0,.6); }
-  #highlightLayer { position:absolute; inset:0; pointer-events:none; }
-  .highlight { position:absolute; background:yellow; opacity:0.5; border-radius:3px; }
+  body { margin:0; font-family:system-ui; background:#0f0f14; color:#eaeaf0; overflow:hidden; }
+  header { display:flex; justify-content:center; gap:10px; padding:10px; background:#181826; flex-wrap:wrap; }
+  header input[type=number]{ width:60px; padding:4px; border-radius:6px; border:none; text-align:center;}
+  button{ background:#2a2a44; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer;}
+  button:hover{ background:#3b3b66;}
+  #main{ display:flex; justify-content:center; align-items:flex-start; height:calc(100vh-70px); overflow:auto; padding:10px;}
+  #viewer{ position:relative;}
+  canvas{ display:block; border-radius:8px; box-shadow:0 10px 40px rgba(0,0,0,.6);}
+  #highlightLayer{ position:absolute; inset:0; pointer-events:none;}
+  .progressContainer{ width:80%; height:8px; background:#333; border-radius:4px; margin-top:5px; }
+  .progressBar{ height:100%; background:#7f5af0; width:0%; border-radius:4px;}
 </style>
 </head>
 <body>
 
 <header>
+  <button id="start">⏮ Start</button>
   <button id="prev">◀</button>
-  <span id="pageInfo">Loading…</span>
+  <input type="number" id="pageNumInput" min="1" value="1">
   <button id="next">▶</button>
+  <button id="end">⏭ End</button>
+  <button id="scrollToggle">Auto-Scroll OFF</button>
+  <button id="viewMode">Fullscreen</button>
+  <button id="themeDark">Dark</button>
+  <button id="themeSepia">Sepia</button>
+  <button id="themeMinimal">Minimal</button>
+  <input type="text" id="searchInput" placeholder="Search text">
 </header>
 
 <div id="main">
   <div id="viewer">
     <canvas id="pdfCanvas"></canvas>
     <div id="highlightLayer"></div>
+    <div class="progressContainer">
+      <div class="progressBar" id="progressBar"></div>
+    </div>
   </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-const url = 'book.pdf';
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const url='book.pdf';
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-let pdfDoc = null;
-let pageNum = 1;
-const scale = 1.5;
-const canvas = document.getElementById('pdfCanvas');
-const ctx = canvas.getContext('2d');
-const highlightLayer = document.getElementById('highlightLayer');
-const pageInfo = document.getElementById('pageInfo');
+let pdfDoc=null, pageNum=Number(localStorage.getItem('lastPage'))||1;
+const scale=1.5;
+const canvas=document.getElementById('pdfCanvas');
+const ctx=canvas.getContext('2d');
+const pageNumInput=document.getElementById('pageNumInput');
+const progressBar=document.getElementById('progressBar');
 
-let highlights = {}; // store highlights per page
+let autoScroll=false, scrollInterval=null;
 
+// 🔊 page turn sound
+const audio = new Audio('https://freesound.org/data/previews/522/522432_1079972-lq.mp3');
+
+// Render PDF Page
 function renderPage(num){
   pdfDoc.getPage(num).then(page=>{
-    const viewport = page.getViewport({scale});
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    document.getElementById('viewer').style.width = viewport.width+'px';
-    document.getElementById('viewer').style.height = viewport.height+'px';
+    const viewport=page.getViewport({scale});
+    canvas.width=viewport.width;
+    canvas.height=viewport.height;
+    document.getElementById('viewer').style.width=viewport.width+'px';
+    document.getElementById('viewer').style.height=viewport.height+'px';
 
-    // render PDF page
     page.render({canvasContext:ctx,viewport:viewport});
 
-    // clear previous highlights
-    highlightLayer.innerHTML='';
-    if(highlights[num]){
-      highlights[num].forEach(h=>{
-        const div=document.createElement('div');
-        div.className='highlight';
-        div.style.left=h.x+'px';
-        div.style.top=h.y+'px';
-        div.style.width=h.w+'px';
-        div.style.height=h.h+'px';
-        highlightLayer.appendChild(div);
-      });
-    }
-
-    pageInfo.textContent=`Page ${pageNum} / ${pdfDoc.numPages}`;
+    pageNumInput.value=pageNum;
+    progressBar.style.width=((pageNum/pdfDoc.numPages)*100)+'%';
+    localStorage.setItem('lastPage',pageNum);
+    audio.play();
   });
 }
 
-// navigation
-document.getElementById('next').onclick=()=>{
-  if(pageNum < pdfDoc.numPages){ pageNum++; renderPage(pageNum); }
-};
-document.getElementById('prev').onclick=()=>{
-  if(pageNum>1){ pageNum--; renderPage(pageNum); }
-};
+// Navigation functions
+function nextPage(){ if(pageNum<pdfDoc.numPages){ pageNum++; renderPage(pageNum); } }
+function prevPage(){ if(pageNum>1){ pageNum--; renderPage(pageNum); } }
+function startPage(){ pageNum=1; renderPage(pageNum); }
+function endPage(){ pageNum=pdfDoc.numPages; renderPage(pageNum); }
 
-// double click to highlight
-document.getElementById('viewer').addEventListener('dblclick', e=>{
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  const w = 100; // highlight width
-  const h = 20;  // highlight height
-
-  const div = document.createElement('div');
-  div.className='highlight';
-  div.style.left=x+'px';
-  div.style.top=y+'px';
-  div.style.width=w+'px';
-  div.style.height=h+'px';
-  highlightLayer.appendChild(div);
-
-  if(!highlights[pageNum]) highlights[pageNum]=[];
-  highlights[pageNum].push({x,y,w,h});
+// Keyboard navigation
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight') nextPage();
+  if(e.key==='ArrowLeft') prevPage();
 });
 
-// load PDF
+// Input page jump
+pageNumInput.addEventListener('change',e=>{
+  let val=Number(pageNumInput.value);
+  if(val>=1 && val<=pdfDoc.numPages){ pageNum=val; renderPage(pageNum); }
+});
+
+// Buttons
+document.getElementById('next').onclick=nextPage;
+document.getElementById('prev').onclick=prevPage;
+document.getElementById('start').onclick=startPage;
+document.getElementById('end').onclick=endPage;
+
+// Auto-scroll
+document.getElementById('scrollToggle').onclick=()=>{
+  autoScroll=!autoScroll;
+  document.getElementById('scrollToggle').textContent=`Auto-Scroll ${autoScroll?'ON':'OFF'}`;
+  if(autoScroll){ scrollInterval=setInterval(()=>{ if(pageNum<pdfDoc.numPages) nextPage(); else clearInterval(scrollInterval); },1500); }
+  else clearInterval(scrollInterval);
+};
+
+// Fullscreen / split-screen toggle
+let fullscreen=false;
+document.getElementById('viewMode').onclick=()=>{
+  fullscreen=!fullscreen;
+  const viewer=document.getElementById('viewer');
+  if(fullscreen) viewer.style.width='100vw';
+  else viewer.style.width=(canvas.width)+'px';
+};
+
+// Theme buttons
+document.getElementById('themeDark').onclick=()=>{ document.body.style.background='#0f0f14'; };
+document.getElementById('themeSepia').onclick=()=>{ document.body.style.background='#f4ecd8'; };
+document.getElementById('themeMinimal').onclick=()=>{ document.body.style.background='#111'; document.querySelectorAll('button').forEach(b=>b.style.display='none'); };
+
+// Search (text search overlay)
+document.getElementById('searchInput').addEventListener('input',e=>{
+  const term=e.target.value.toLowerCase();
+  // simple visual effect: just alert if page contains term (full PDF search requires text layer, this is basic placeholder)
+  if(term){ console.log(`Search term: ${term} (for full search, text layer needed)`); }
+});
+
+// Load PDF
 pdfjsLib.getDocument(url).promise.then(pdf=>{
   pdfDoc=pdf;
   renderPage(pageNum);
 });
 </script>
-
 </body>
 </html>
