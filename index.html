@@ -2,71 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Reading App</title>
-
+<title>PDF Reading App with Highlights</title>
 <style>
-  body {
-    margin: 0;
-    background: #0f0f14;
-    color: #eaeaf0;
-    font-family: system-ui, sans-serif;
-    overflow: hidden;
-  }
-
-  header {
-    display: flex;
-    justify-content: center;
-    gap: 16px;
-    padding: 10px;
-    background: #181826;
-  }
-
-  button {
-    background: #2a2a44;
-    color: white;
-    border: none;
-    padding: 8px 14px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 16px;
-  }
-
-  main {
-    height: calc(100vh - 56px);
-    overflow: auto;
-    display: flex;
-    justify-content: center;
-    padding: 20px;
-  }
-
-  #viewer {
-    position: relative;
-  }
-
-  canvas {
-    background: white;
-    border-radius: 10px;
-    box-shadow: 0 10px 40px rgba(0,0,0,.6);
-  }
-
-  .textLayer {
-    position: absolute;
-    inset: 0;
-    color: transparent;
-    user-select: text;
-  }
-
-  .textLayer span {
-    cursor: text;
-  }
-
-  .highlight {
-    background: yellow;
-    color: transparent;
-  }
+  body { margin:0; background:#0f0f14; font-family:system-ui; color:white; overflow:hidden; }
+  header { display:flex; justify-content:center; gap:16px; padding:10px; background:#181826; }
+  button { background:#2a2a44; color:white; border:none; padding:8px 14px; border-radius:8px; cursor:pointer; }
+  button:hover { background:#3b3b66; }
+  #main { display:flex; justify-content:center; align-items:flex-start; height:calc(100vh-56px); overflow:auto; padding:20px; }
+  #viewer { position:relative; }
+  canvas { display:block; border-radius:10px; box-shadow:0 10px 40px rgba(0,0,0,.6); }
+  #highlightLayer { position:absolute; inset:0; pointer-events:none; }
+  .highlight { position:absolute; background:yellow; opacity:0.5; border-radius:3px; }
 </style>
 </head>
-
 <body>
 
 <header>
@@ -75,86 +23,90 @@
   <button id="next">▶</button>
 </header>
 
-<main>
+<div id="main">
   <div id="viewer">
     <canvas id="pdfCanvas"></canvas>
-    <div id="textLayer" class="textLayer"></div>
+    <div id="highlightLayer"></div>
   </div>
-</main>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-
 <script>
 const url = 'book.pdf';
-
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 let pdfDoc = null;
 let pageNum = 1;
 const scale = 1.5;
-
 const canvas = document.getElementById('pdfCanvas');
 const ctx = canvas.getContext('2d');
-const textLayerDiv = document.getElementById('textLayer');
+const highlightLayer = document.getElementById('highlightLayer');
 const pageInfo = document.getElementById('pageInfo');
 
-function renderPage(num) {
-  pdfDoc.getPage(num).then(page => {
-    const viewport = page.getViewport({ scale });
+let highlights = {}; // store highlights per page
 
+function renderPage(num){
+  pdfDoc.getPage(num).then(page=>{
+    const viewport = page.getViewport({scale});
     canvas.width = viewport.width;
     canvas.height = viewport.height;
+    document.getElementById('viewer').style.width = viewport.width+'px';
+    document.getElementById('viewer').style.height = viewport.height+'px';
 
-    document.getElementById('viewer').style.width = viewport.width + 'px';
-    document.getElementById('viewer').style.height = viewport.height + 'px';
+    // render PDF page
+    page.render({canvasContext:ctx,viewport:viewport});
 
-    page.render({
-      canvasContext: ctx,
-      viewport
-    });
-
-    textLayerDiv.innerHTML = '';
-    textLayerDiv.style.width = viewport.width + 'px';
-    textLayerDiv.style.height = viewport.height + 'px';
-
-    page.getTextContent().then(textContent => {
-      pdfjsLib.renderTextLayer({
-        textContent,
-        container: textLayerDiv,
-        viewport,
-        textDivs: []
+    // clear previous highlights
+    highlightLayer.innerHTML='';
+    if(highlights[num]){
+      highlights[num].forEach(h=>{
+        const div=document.createElement('div');
+        div.className='highlight';
+        div.style.left=h.x+'px';
+        div.style.top=h.y+'px';
+        div.style.width=h.w+'px';
+        div.style.height=h.h+'px';
+        highlightLayer.appendChild(div);
       });
-    });
+    }
 
-    pageInfo.textContent = `Page ${pageNum} / ${pdfDoc.numPages}`;
+    pageInfo.textContent=`Page ${pageNum} / ${pdfDoc.numPages}`;
   });
 }
 
-pdfjsLib.getDocument(url).promise.then(pdf => {
-  pdfDoc = pdf;
-  renderPage(pageNum);
+// navigation
+document.getElementById('next').onclick=()=>{
+  if(pageNum < pdfDoc.numPages){ pageNum++; renderPage(pageNum); }
+};
+document.getElementById('prev').onclick=()=>{
+  if(pageNum>1){ pageNum--; renderPage(pageNum); }
+};
+
+// double click to highlight
+document.getElementById('viewer').addEventListener('dblclick', e=>{
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const w = 100; // highlight width
+  const h = 20;  // highlight height
+
+  const div = document.createElement('div');
+  div.className='highlight';
+  div.style.left=x+'px';
+  div.style.top=y+'px';
+  div.style.width=w+'px';
+  div.style.height=h+'px';
+  highlightLayer.appendChild(div);
+
+  if(!highlights[pageNum]) highlights[pageNum]=[];
+  highlights[pageNum].push({x,y,w,h});
 });
 
-document.getElementById('next').onclick = () => {
-  if (pageNum < pdfDoc.numPages) {
-    pageNum++;
-    renderPage(pageNum);
-  }
-};
-
-document.getElementById('prev').onclick = () => {
-  if (pageNum > 1) {
-    pageNum--;
-    renderPage(pageNum);
-  }
-};
-
-/* 🔥 DOUBLE CLICK HIGHLIGHT 🔥 */
-textLayerDiv.addEventListener('dblclick', e => {
-  if (e.target.tagName === 'SPAN') {
-    e.target.classList.toggle('highlight');
-  }
+// load PDF
+pdfjsLib.getDocument(url).promise.then(pdf=>{
+  pdfDoc=pdf;
+  renderPage(pageNum);
 });
 </script>
 
