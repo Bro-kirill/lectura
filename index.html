@@ -1,132 +1,243 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ca">
 <head>
 <meta charset="UTF-8">
-<title>PDF Reader - Double Page Mode</title>
+<title>Lector PDF amb Apunts</title>
 
 <style>
-  body { margin:0; font-family:system-ui; background:#0f0f14; color:#eaeaf0; overflow:auto; }
-  header { display:flex; justify-content:center; gap:10px; padding:10px; background:#181826; flex-wrap:wrap; }
-  header input[type=number]{ width:60px; padding:4px; border-radius:6px; border:none; text-align:center;}
-  button{ background:#2a2a44; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer;}
-  button:hover{ background:#3b3b66;}
-  #main{ display:flex; justify-content:center; align-items:flex-start; height:calc(100vh-70px); overflow:auto; padding:10px;}
-  #viewer{ position:relative; display:flex; gap:10px; }
-  canvas{ display:block; border-radius:8px; box-shadow:0 10px 40px rgba(0,0,0,.6);}
-  .progressContainer{ width:80%; height:8px; background:#333; border-radius:4px; margin-top:5px; }
-  .progressBar{ height:100%; background:#7f5af0; width:0%; border-radius:4px;}
+body{
+  margin:0;
+  font-family:system-ui;
+  background:#0f0f14;
+  color:#eaeaf0;
+}
+
+header{
+  display:flex;
+  gap:10px;
+  padding:10px;
+  background:#181826;
+  flex-wrap:wrap;
+  justify-content:center;
+}
+
+button{
+  background:#2a2a44;
+  color:white;
+  border:none;
+  padding:6px 12px;
+  border-radius:6px;
+  cursor:pointer;
+}
+button:hover{ background:#3b3b66; }
+
+input[type=number]{
+  width:60px;
+  text-align:center;
+  border-radius:6px;
+  border:none;
+  padding:4px;
+}
+
+#main{
+  height:calc(100vh - 70px);
+  overflow:auto;
+  padding:10px;
+}
+
+/* 📘 BOOK */
+#bookView{ display:block; }
+
+#viewer{
+  display:flex;
+  gap:10px;
+  justify-content:center;
+}
+
+canvas{
+  border-radius:8px;
+  box-shadow:0 10px 40px rgba(0,0,0,.6);
+}
+
+/* 📝 NOTES */
+#notesView{
+  display:none;
+  max-width:900px;
+  margin:auto;
+}
+
+#notesToolbar{
+  display:flex;
+  gap:10px;
+  margin-bottom:10px;
+  flex-wrap:wrap;
+}
+
+#notesEditor{
+  background:#fff;
+  color:#000;
+  min-height:80vh;
+  padding:20px;
+  border-radius:10px;
+  outline:none;
+  font-size:16px;
+  line-height:1.6;
+}
+
+/* Progress */
+.progressContainer{
+  width:80%;
+  height:8px;
+  background:#333;
+  border-radius:4px;
+  margin:10px auto;
+}
+.progressBar{
+  height:100%;
+  background:#7f5af0;
+  width:0%;
+  border-radius:4px;
+}
 </style>
 </head>
 <body>
 
 <header>
-  <button id="start">⏮ Start</button>
-  <button id="prev">◀</button>
-  <input type="number" id="pageNumInput" min="1" value="1">
-  <button id="next">▶</button>
-  <button id="end">⏭ End</button>
-  <button id="doublePageToggle">Double Page OFF</button>
-  <button id="themeDark">Dark</button>
-  <button id="themeSepia">Sepia</button>
+  <button id="toggleMode">📝 Entrar als apunts</button>
+
+  <button id="start">⏮ Inici</button>
+  <button id="prev">◀ Anterior</button>
+  <input type="number" id="pageInput" min="1">
+  <button id="next">Següent ▶</button>
+  <button id="end">Final ⏭</button>
+
+  <button id="doubleToggle">Mode doble DESACTIVAT</button>
 </header>
 
 <div id="main">
-  <div id="viewer">
-    <canvas id="pdfCanvas"></canvas>
-    <canvas id="pdfCanvas2" style="display:none;"></canvas>
+
+  <!-- 📘 BOOK -->
+  <div id="bookView">
+    <div id="viewer">
+      <canvas id="c1"></canvas>
+      <canvas id="c2" style="display:none"></canvas>
+    </div>
+
     <div class="progressContainer">
-      <div class="progressBar" id="progressBar"></div>
+      <div class="progressBar" id="progress"></div>
     </div>
   </div>
+
+  <!-- 📝 NOTES -->
+  <div id="notesView">
+
+    <div id="notesToolbar">
+      <button onclick="format('bold')"><b>B</b></button>
+      <input type="color" id="colorPicker" title="Color del text">
+
+    </div>
+
+    <div id="notesEditor" contenteditable="true">
+      <h2>Apunts</h2>
+      <p>Escriu aquí tot el que vulguis ✍️</p>
+    </div>
+
+  </div>
+
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
 <script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
 const url='book.pdf';
-pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let pdfDoc,page=Number(localStorage.getItem('lastPage'))||1;
+let double=false;
 
-let pdfDoc=null, pageNum=Number(localStorage.getItem('lastPage'))||1;
-const scale=1.5;
-const canvas=document.getElementById('pdfCanvas');
-const ctx=canvas.getContext('2d');
-const canvas2=document.getElementById('pdfCanvas2');
-const ctx2=canvas2.getContext('2d');
-const pageNumInput=document.getElementById('pageNumInput');
-const progressBar=document.getElementById('progressBar');
+const c1=document.getElementById('c1').getContext('2d');
+const c2=document.getElementById('c2').getContext('2d');
+const canvas1=c1.canvas;
+const canvas2=c2.canvas;
 
-let doublePage=false;
-const audio = new Audio('https://freesound.org/data/previews/522/522432_1079972-lq.mp3');
+const pageInput=document.getElementById('pageInput');
+const progress=document.getElementById('progress');
 
-// Render Page (or double-page)
-function renderPage(num){
-  pdfDoc.getPage(num).then(page=>{
-    const viewport=page.getViewport({scale});
-    canvas.width=viewport.width;
-    canvas.height=viewport.height;
-    canvas.style.display='block';
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    page.render({canvasContext:ctx,viewport:viewport});
-    
-    // second page for double-page mode
-    if(doublePage && num<pdfDoc.numPages){
-      canvas2.style.display='block';
-      pdfDoc.getPage(num+1).then(page2=>{
-        const vp2=page2.getViewport({scale});
+/* 📘 Render PDF */
+function render(p){
+  pdfDoc.getPage(p).then(pg=>{
+    let vp=pg.getViewport({scale:1.5});
+    canvas1.width=vp.width;
+    canvas1.height=vp.height;
+    pg.render({canvasContext:c1,viewport:vp});
+
+    if(double && p<pdfDoc.numPages){
+      pdfDoc.getPage(p+1).then(pg2=>{
+        let vp2=pg2.getViewport({scale:1.5});
+        canvas2.style.display='block';
         canvas2.width=vp2.width;
         canvas2.height=vp2.height;
-        ctx2.clearRect(0,0,canvas2.width,canvas2.height);
-        page2.render({canvasContext:ctx2,viewport:vp2});
+        pg2.render({canvasContext:c2,viewport:vp2});
       });
-    } else {
-      canvas2.style.display='none';
-    }
+    } else canvas2.style.display='none';
 
-    pageNumInput.value=pageNum;
-    progressBar.style.width=((pageNum/pdfDoc.numPages)*100)+'%';
-    localStorage.setItem('lastPage',pageNum);
-    audio.play();
+    pageInput.value=p;
+    progress.style.width=(p/pdfDoc.numPages*100)+'%';
+    localStorage.setItem('lastPage',p);
   });
 }
 
-// Navigation functions
-function nextPage(){ if(pageNum<pdfDoc.numPages){ pageNum+=doublePage?2:1; renderPage(pageNum); } }
-function prevPage(){ if(pageNum>1){ pageNum-=doublePage?2:1; if(pageNum<1) pageNum=1; renderPage(pageNum); } }
-function startPage(){ pageNum=1; renderPage(pageNum); }
-function endPage(){ pageNum=pdfDoc.numPages; renderPage(pageNum); }
+/* Navigation */
+next.onclick=()=>{ if(page<pdfDoc.numPages){ page+=double?2:1; render(page);} }
+prev.onclick=()=>{ if(page>1){ page-=double?2:1; render(page);} }
+start.onclick=()=>{ page=1; render(page); }
+end.onclick=()=>{ page=pdfDoc.numPages; render(page); }
 
-// Keyboard navigation
-document.addEventListener('keydown',e=>{
-  if(e.key==='ArrowRight') nextPage();
-  if(e.key==='ArrowLeft') prevPage();
-});
-
-// Input page jump
-pageNumInput.addEventListener('change',e=>{
-  let val=Number(pageNumInput.value);
-  if(val>=1 && val<=pdfDoc.numPages){ pageNum=val; renderPage(pageNum); }
-});
-
-// Buttons
-document.getElementById('next').onclick=nextPage;
-document.getElementById('prev').onclick=prevPage;
-document.getElementById('start').onclick=startPage;
-document.getElementById('end').onclick=endPage;
-
-// Double-page toggle
-document.getElementById('doublePageToggle').onclick=()=>{
-  doublePage=!doublePage;
-  document.getElementById('doublePageToggle').textContent=`Double Page ${doublePage?'ON':'OFF'}`;
-  renderPage(pageNum);
+pageInput.onchange=()=>{
+  let v=+pageInput.value;
+  if(v>=1 && v<=pdfDoc.numPages){ page=v; render(page); }
 };
 
-// Theme buttons
-document.getElementById('themeDark').onclick=()=>{ document.body.style.background='#0f0f14'; };
-document.getElementById('themeSepia').onclick=()=>{ document.body.style.background='#f4ecd8'; };
+doubleToggle.onclick=()=>{
+  double=!double;
+  doubleToggle.textContent=`Mode doble ${double?'ACTIVAT':'DESACTIVAT'}`;
+  render(page);
+};
 
-// Load PDF
+/* 🔁 Toggle book / notes */
+const bookView=document.getElementById('bookView');
+const notesView=document.getElementById('notesView');
+const toggle=document.getElementById('toggleMode');
+
+toggle.onclick=()=>{
+  if(bookView.style.display!=='none'){
+    bookView.style.display='none';
+    notesView.style.display='block';
+    toggle.textContent='📘 Entrar al llibre';
+  }else{
+    notesView.style.display='none';
+    bookView.style.display='block';
+    toggle.textContent='📝 Entrar als apunts';
+  }
+};
+
+/* 📝 Formatting */
+function format(cmd){
+  document.execCommand(cmd,false,null);
+}
+
+colorPicker.oninput=e=>{
+  document.execCommand('foreColor',false,e.target.value);
+};
+
+
+
+/* Load PDF */
 pdfjsLib.getDocument(url).promise.then(pdf=>{
   pdfDoc=pdf;
-  renderPage(pageNum);
+  render(page);
 });
 </script>
 </body>
